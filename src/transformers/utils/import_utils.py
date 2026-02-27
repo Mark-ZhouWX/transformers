@@ -241,6 +241,7 @@ _rich_available = _is_package_available("rich")
 _kernels_available = _is_package_available("kernels")
 _matplotlib_available = _is_package_available("matplotlib")
 _mistral_common_available = _is_package_available("mistral_common")
+_hsdp_common_available = _is_package_available("hyper_parallel")
 _triton_available, _triton_version = _is_package_available("triton", return_version=True)
 
 _torch_version = "N/A"
@@ -1640,6 +1641,9 @@ def is_matplotlib_available() -> Union[tuple[bool, str], bool]:
 
 def is_mistral_common_available() -> Union[tuple[bool, str], bool]:
     return _mistral_common_available
+
+def is_hsdp_available() -> Union[tuple[bool, str], bool]:
+    return _hsdp_common_available
 
 
 def check_torch_load_is_safe() -> None:

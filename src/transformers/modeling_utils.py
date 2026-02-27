@@ -48,7 +48,7 @@ from .configuration_utils import PretrainedConfig
 from .distributed import DistributedConfig
 from .dynamic_module_utils import custom_object_save
 from .generation import CompileConfig, GenerationConfig
-from .integrations import PeftAdapterMixin, deepspeed_config, is_deepspeed_zero3_enabled, is_fsdp_enabled
+from .integrations import PeftAdapterMixin, deepspeed_config, is_deepspeed_zero3_enabled, is_fsdp_enabled, is_hsdp_enabled
 from .integrations.accelerate import find_tied_parameters, init_empty_weights
 from .integrations.deepspeed import _load_state_dict_into_zero3_model
 from .integrations.eager_paged import eager_paged_attention_forward
@@ -516,6 +516,7 @@ def load_state_dict(
                     and torch.distributed.get_rank() > 0
                 )
                 or (is_fsdp_enabled() and not is_local_dist_rank_0())
+                or (is_hsdp_enabled() and not is_local_dist_rank_0())
             ) and not is_quantized:
                 map_location = "meta"
             else:
@@ -765,7 +766,7 @@ def _load_state_dict_into_meta_model(
                 if not is_safetensors:
                     disk_offload_index = offload_weight(param, param_name, disk_offload_folder, disk_offload_index)
             elif not is_quantized or not hf_quantizer.param_needs_quantization(model, param_name):
-                if is_fsdp_enabled():
+                if is_fsdp_enabled() or is_hsdp_enabled():
                     param_device = "cpu" if is_local_dist_rank_0() else "meta"
 
                 _load_parameter_into_model(model, param_name, param.to(param_device))
@@ -777,7 +778,7 @@ def _load_state_dict_into_meta_model(
                 # For quantized modules with FSDP/DeepSpeed Stage 3, we need to quantize the parameter on the GPU
                 # and then cast it to CPU to avoid excessive memory usage on each GPU
                 # in comparison to the sharded model across GPUs.
-                if is_fsdp_enabled() or is_deepspeed_zero3_enabled():
+                if is_fsdp_enabled() or is_deepspeed_zero3_enabled() or is_hsdp_enabled():
                     param_name = hf_quantizer.get_param_name(param_name)
                     module, param_type = get_module_from_name(model, param_name)
                     value = getattr(module, param_type)
@@ -787,7 +788,7 @@ def _load_state_dict_into_meta_model(
                     val_kwargs = value.__dict__
                     if not value.is_floating_point():
                         val_kwargs["requires_grad"] = False
-                    device = "meta" if is_fsdp_enabled() and not is_local_dist_rank_0() else "cpu"
+                    device = "meta" if (is_fsdp_enabled() and not is_local_dist_rank_0()) or (is_hsdp_enabled() and not is_local_dist_rank_0()) else "cpu"
                     value = type(value)(value.data.to(device), **val_kwargs)
                     setattr(module, param_type, value)
 
@@ -840,7 +841,7 @@ def load_shard_file(args):
     if is_deepspeed_zero3_enabled() and not is_quantized:
         error_msgs += _load_state_dict_into_zero3_model(model, state_dict)
     # Skip it with fsdp on ranks other than 0
-    elif not (is_fsdp_enabled() and not is_local_dist_rank_0() and not is_quantized):
+    elif not ((is_fsdp_enabled() or is_hsdp_enabled()) and not is_local_dist_rank_0() and not is_quantized):
         disk_offload_index = _load_state_dict_into_meta_model(
             model,
             state_dict,
@@ -5137,7 +5138,7 @@ class PreTrainedModel(nn.Module, EmbeddingAccessMixin, ModuleUtilsMixin, PushToH
             ):
                 device_map_kwargs["offload_buffers"] = True
 
-            if not is_fsdp_enabled() and not is_deepspeed_zero3_enabled():
+            if not (is_fsdp_enabled() or is_hsdp_enabled()) and not is_deepspeed_zero3_enabled():
                 dispatch_model(model, **device_map_kwargs)
 
         if hf_quantizer is not None:
@@ -5833,7 +5834,7 @@ class PreTrainedModel(nn.Module, EmbeddingAccessMixin, ModuleUtilsMixin, PushToH
         is_quantized = hf_quantizer is not None
 
         # In this case we need to move everything back
-        if is_fsdp_enabled() and not is_local_dist_rank_0() and not is_quantized:
+        if is_fsdp_enabled() and not is_local_dist_rank_0() and not is_quantized and is_hsdp_enabled():
             # We only do it for the parameters, as the buffers are not initialized on the meta device by default
             for key, param in self.named_parameters():
                 value = torch.empty_like(param, dtype=dtype, device="cpu")

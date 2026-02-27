@@ -16,7 +16,7 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
-from ..utils import is_torch_available, strtobool
+from ..utils import is_hsdp_available, is_torch_available, strtobool
 
 
 if TYPE_CHECKING:
@@ -48,6 +48,19 @@ def is_fsdp_enabled():
             and torch.distributed.is_initialized()
             and strtobool(os.environ.get("ACCELERATE_USE_FSDP", "False")) == 1
             and strtobool(os.environ.get("FSDP_CPU_RAM_EFFICIENT_LOADING", "False")) == 1
+        )
+
+    return False
+
+def is_hsdp_enabled():
+    if is_hsdp_available():
+        import torch
+
+        return (
+            torch.distributed.is_available()
+            and torch.distributed.is_initialized()
+            and strtobool(os.environ.get("ACCELERATE_USE_HSDP", "False")) == 1
+            and strtobool(os.environ.get("HSDP_CPU_RAM_EFFICIENT_LOADING", "False")) == 1
         )
 
     return False

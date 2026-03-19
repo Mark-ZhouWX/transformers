@@ -5834,7 +5834,7 @@ class PreTrainedModel(nn.Module, EmbeddingAccessMixin, ModuleUtilsMixin, PushToH
         is_quantized = hf_quantizer is not None
 
         # In this case we need to move everything back
-        if is_fsdp_enabled() and not is_local_dist_rank_0() and not is_quantized and is_hsdp_enabled():
+        if (is_fsdp_enabled() or is_hsdp_enabled()) and not is_local_dist_rank_0() and not is_quantized:
             # We only do it for the parameters, as the buffers are not initialized on the meta device by default
             for key, param in self.named_parameters():
                 value = torch.empty_like(param, dtype=dtype, device="cpu")

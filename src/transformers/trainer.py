@@ -2744,7 +2744,13 @@ class Trainer:
                             context = implicit_replication
 
                         with context():
-                            self.optimizer.step()
+                            # FIXME hyper parallel need to skip DTensor optimizer right now
+                            if self.is_hsdp_enabled:
+                                from hyper_parallel import SkipDTensorDispatch
+                                with SkipDTensorDispatch():
+                                    self.optimizer.step()
+                            else:
+                                self.optimizer.step()
 
                         self.control = self.callback_handler.on_optimizer_step(args, self.state, self.control)
 
